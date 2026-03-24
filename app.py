@@ -20,7 +20,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # ── Database ──────────────────────────────────────────────────────────────────
 
 def get_db():
-    db = sqlite3.connect('datasets.db')
+    db = sqlite3.connect('/tmp/datasets.db')
     db.row_factory = sqlite3.Row
     return db
 
