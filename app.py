@@ -38,10 +38,15 @@ def init_db():
                 created    TEXT DEFAULT (datetime('now'))
             )
         ''')
-        try:
-            db.execute('ALTER TABLE datasets ADD COLUMN hash TEXT')
-        except:
-            pass
+        for col, definition in [
+            ('hash', 'TEXT'),
+            ('word_count', 'INTEGER DEFAULT 0'),
+            ('char_count', 'INTEGER DEFAULT 0')
+        ]:
+            try:
+                db.execute(f'ALTER TABLE datasets ADD COLUMN {col} {definition}')
+            except:
+                pass
         db.commit()
 
 
