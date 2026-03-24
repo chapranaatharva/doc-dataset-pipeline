@@ -1,387 +1,256 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Doc-to-Dataset Pipeline</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+import os
+import json
+import sqlite3
+import hashlib
+from flask import Flask, request, jsonify, render_template, send_file
+from werkzeug.utils import secure_filename
+from extractor import extract_text
+from processor import clean_and_chunk
+import io
+import csv
 
-    header {
-      background: #1a1d27; border-bottom: 1px solid #2d3148;
-      padding: 18px 32px; display: flex; align-items: center; gap: 12px;
-    }
-    header h1 { font-size: 20px; font-weight: 600; color: #a78bfa; }
-    header span { font-size: 13px; color: #64748b; }
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
 
-    .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'txt'}
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
-    .card h2 { font-size: 15px; font-weight: 600; color: #a78bfa; margin-bottom: 16px; }
 
-    .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
-    .tab { padding: 7px 18px; border-radius: 6px; border: 1px solid #2d3148; background: transparent;
-           color: #94a3b8; cursor: pointer; font-size: 13px; transition: all .2s; }
-    .tab.active { background: #a78bfa22; border-color: #a78bfa; color: #a78bfa; }
+# ── Database ──────────────────────────────────────────────────────────────────
 
-    .input-panel { display: none; }
-    .input-panel.active { display: block; }
+def get_db():
+    db = sqlite3.connect('/tmp/datasets.db')
+    db.row_factory = sqlite3.Row
+    return db
 
-    input[type="text"], input[type="number"], textarea {
-      width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
-      padding: 10px 14px; color: #e2e8f0; font-size: 14px; outline: none; transition: border-color .2s;
-    }
-    input[type="text"]:focus, input[type="number"]:focus, textarea:focus { border-color: #a78bfa; }
-    textarea { resize: vertical; min-height: 100px; }
+def init_db():
+    with get_db() as db:
+        db.execute('DROP TABLE IF EXISTS datasets')
+        db.execute('''
+            CREATE TABLE datasets (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                source     TEXT NOT NULL,
+                chunks     TEXT NOT NULL,
+                hash       TEXT,
+                word_count INTEGER DEFAULT 0,
+                char_count INTEGER DEFAULT 0,
+                created    TEXT DEFAULT (datetime('now'))
+            )
+        ''')
+        db.commit()
 
-    .drop-zone {
-      border: 2px dashed #2d3148; border-radius: 10px; padding: 36px;
-      text-align: center; cursor: pointer; transition: all .2s; color: #64748b; font-size: 14px;
-    }
-    .drop-zone:hover, .drop-zone.drag-over { border-color: #a78bfa; background: #a78bfa0a; color: #a78bfa; }
-    .drop-zone input { display: none; }
 
-    .options-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
-    .options-row label { font-size: 13px; color: #94a3b8; white-space: nowrap; }
-    .chunk-slider { flex: 1; min-width: 160px; accent-color: #a78bfa; }
-    .chunk-val { font-size: 13px; color: #a78bfa; font-weight: 600; min-width: 60px; }
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-    .btn { padding: 10px 24px; border-radius: 8px; border: none; cursor: pointer;
-           font-size: 14px; font-weight: 500; transition: opacity .2s; }
-    .btn:hover { opacity: .85; }
-    .btn-primary { background: #a78bfa; color: #0f1117; }
-    .btn-danger  { background: #ef4444; color: #fff; padding: 6px 14px; font-size: 12px; }
-    .btn-export  { background: #1e293b; color: #a78bfa; border: 1px solid #a78bfa; padding: 6px 12px; font-size: 12px; }
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    .status { padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-top: 12px; display: none; }
-    .status.success { background: #14532d33; border: 1px solid #22c55e44; color: #86efac; display: block; }
-    .status.error   { background: #7f1d1d33; border: 1px solid #ef444444; color: #fca5a5; display: block; }
-    .status.warning { background: #78350f33; border: 1px solid #f59e0b44; color: #fcd34d; display: block; }
-    .status.loading { background: #1e293b;   border: 1px solid #2d3148;   color: #94a3b8; display: block; }
+def compute_hash(text: str) -> str:
+    return hashlib.md5(text.encode()).hexdigest()
 
-    .search-row { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
-    .search-row input { flex: 1; }
-    .stats-row { font-size: 12px; color: #64748b; margin-bottom: 12px; }
+def check_duplicate(text_hash: str):
+    with get_db() as db:
+        row = db.execute('SELECT id, name FROM datasets WHERE hash = ?', (text_hash,)).fetchone()
+    return dict(row) if row else None
 
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 10px 14px; color: #64748b; border-bottom: 1px solid #2d3148; font-weight: 500; }
-    td { padding: 12px 14px; border-bottom: 1px solid #1e293b; vertical-align: middle; }
-    tr:hover td { background: #ffffff05; }
+def compute_totals(chunks: list) -> dict:
+    total_words = sum(c['meta']['word_count'] for c in chunks)
+    total_chars = sum(c['meta']['char_count'] for c in chunks)
+    return {'word_count': total_words, 'char_count': total_chars}
 
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 500; }
-    .badge-pdf   { background: #7c3aed22; color: #a78bfa; border: 1px solid #7c3aed44; }
-    .badge-url   { background: #0369a122; color: #38bdf8; border: 1px solid #0369a144; }
-    .badge-text  { background: #15803d22; color: #4ade80; border: 1px solid #15803d44; }
-    .badge-image { background: #b4530922; color: #fb923c; border: 1px solid #b4530944; }
+def save_dataset(name, source, chunks, text_hash):
+    totals = compute_totals(chunks)
+    with get_db() as db:
+        cursor = db.execute(
+            'INSERT INTO datasets (name, source, chunks, hash, word_count, char_count) VALUES (?, ?, ?, ?, ?, ?)',
+            (name, source, json.dumps(chunks), text_hash,
+             totals['word_count'], totals['char_count'])
+        )
+        db.commit()
+        return cursor.lastrowid
 
-    .quality { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
-    .quality-high   { background: #14532d33; color: #4ade80; }
-    .quality-medium { background: #78350f33; color: #fcd34d; }
-    .quality-low    { background: #7f1d1d33; color: #fca5a5; }
 
-    .meta-cell { font-size: 12px; color: #64748b; line-height: 1.6; }
-    .export-group { display: flex; gap: 6px; }
-    #empty-state { text-align: center; padding: 40px; color: #475569; font-size: 14px; }
+# ── Routes ────────────────────────────────────────────────────────────────────
 
-    .batch-result { padding: 6px 0; font-size: 13px; border-bottom: 1px solid #1e293b; }
-    .batch-result:last-child { border-bottom: none; }
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    .modal-overlay { position: fixed; inset: 0; background: #000000bb; display: none;
-                     align-items: center; justify-content: center; z-index: 100; }
-    .modal-overlay.open { display: flex; }
-    .modal { background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px;
-             width: 700px; max-height: 82vh; overflow-y: auto; padding: 28px; }
-    .modal h3 { font-size: 15px; color: #a78bfa; margin-bottom: 4px; }
-    .modal-meta { font-size: 12px; color: #64748b; margin-bottom: 16px; }
 
-    .chunk-item { background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
-                  padding: 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.6; }
-    .chunk-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .chunk-num { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
-    .chunk-stats { font-size: 11px; color: #475569; }
-    .chunk-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
-    .chunk-text  { color: #cbd5e1; }
-    .modal-close { margin-top: 16px; background: #2d3148; border: none; color: #94a3b8;
-                   padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-  </style>
-</head>
-<body>
+@app.route('/api/ingest', methods=['POST'])
+def ingest():
+    """
+    Accepts:
+      - multipart with one OR multiple files (batch upload)
+      - JSON body with {"url": "..."}
+      - JSON body with {"text": "...", "name": "..."}
+    Optional param: chunk_size (int, default 300)
+    """
+    chunk_size = int(request.form.get('chunk_size', 300) or
+                     (request.get_json() or {}).get('chunk_size', 300))
 
-<header>
-  <h1>Doc-to-Dataset Pipeline</h1>
-  <span>Unstructured input → LLM-ready JSONL</span>
-</header>
+    # ── Batch file upload ──
+    if 'file' in request.files:
+        files = request.files.getlist('file')
+        results = []
 
-<div class="container">
+        for file in files:
+            if file.filename == '' or not allowed_file(file.filename):
+                results.append({'name': file.filename, 'error': 'Invalid or unsupported file'})
+                continue
 
-  <div class="card">
-    <h2>Ingest Document</h2>
-    <div class="tabs">
-      <button class="tab active" onclick="switchTab('file')">File Upload</button>
-      <button class="tab"        onclick="switchTab('url')">URL</button>
-      <button class="tab"        onclick="switchTab('text')">Plain Text</button>
-    </div>
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            source_type = filename.rsplit('.', 1)[1].lower()
 
-    <div id="panel-file" class="input-panel active">
-      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.txt"
-               multiple onchange="handleFileSelect(this)"/>
-        <div id="drop-label">Drop PDFs, images, or .txt files here — or click to browse<br/>
-          <span style="font-size:12px;color:#475569">Multiple files supported</span></div>
-      </div>
-    </div>
+            try:
+                raw_text = extract_text(filepath, source_type)
+            except Exception as e:
+                results.append({'name': filename, 'error': str(e)})
+                continue
 
-    <div id="panel-url" class="input-panel">
-      <input type="text" id="url-input" placeholder="https://example.com/article"/>
-    </div>
+            if not raw_text.strip():
+                results.append({'name': filename, 'error': 'No text extracted'})
+                continue
 
-    <div id="panel-text" class="input-panel">
-      <input type="text" id="text-name" placeholder="Document name (optional)" style="margin-bottom:10px"/>
-      <textarea id="text-input" placeholder="Paste raw text here..."></textarea>
-    </div>
+            text_hash = compute_hash(raw_text)
+            duplicate = check_duplicate(text_hash)
+            if duplicate:
+                results.append({
+                    'name': filename,
+                    'duplicate': True,
+                    'existing_id': duplicate['id'],
+                    'existing_name': duplicate['name']
+                })
+                continue
 
-    <div class="options-row">
-      <label>Chunk size:</label>
-      <input type="range" class="chunk-slider" id="chunk-slider" min="100" max="600" step="50" value="300"
-             oninput="document.getElementById('chunk-val').textContent = this.value + ' words'"/>
-      <span class="chunk-val" id="chunk-val">300 words</span>
-      <button class="btn btn-primary" onclick="ingest()">Process →</button>
-    </div>
-    <div id="status" class="status"></div>
-    <div id="batch-results"></div>
-  </div>
+            chunks    = clean_and_chunk(raw_text, chunk_size)
+            dataset_id = save_dataset(filename, source_type, chunks, text_hash)
+            results.append({
+                'id':           dataset_id,
+                'name':         filename,
+                'total_chunks': len(chunks),
+                'preview':      chunks[:3]
+            })
 
-  <div class="card">
-    <h2>Processed Datasets</h2>
-    <div class="search-row">
-      <input type="text" id="search-input" placeholder="Search datasets by name…"
-             oninput="searchDatasets(this.value)"/>
-    </div>
-    <div id="stats-row" class="stats-row"></div>
-    <div id="dataset-container">
-      <div id="empty-state">No datasets yet — ingest a document above</div>
-    </div>
-  </div>
+        return jsonify(results), 201
 
-</div>
+    # ── URL or plain text ──
+    elif request.is_json:
+        data = request.get_json()
+        if 'url' in data:
+            source_type = 'url'
+            doc_name    = data['url']
+            try:
+                raw_text = extract_text(data['url'], 'url')
+            except Exception as e:
+                return jsonify({'error': str(e)}), 422
+        elif 'text' in data:
+            source_type = 'text'
+            doc_name    = data.get('name', 'pasted-text')
+            raw_text    = data['text']
+        else:
+            return jsonify({'error': 'Provide file, url, or text'}), 400
 
-<div class="modal-overlay" id="modal">
-  <div class="modal">
-    <h3 id="modal-title">Dataset Preview</h3>
-    <div class="modal-meta" id="modal-meta"></div>
-    <div id="modal-chunks"></div>
-    <button class="modal-close" onclick="closeModal()">Close</button>
-  </div>
-</div>
+        if not raw_text.strip():
+            return jsonify({'error': 'Could not extract text from source'}), 422
 
-<script>
-  let currentTab = 'file';
-  let selectedFiles = [];
-  let searchTimeout = null;
+        text_hash = compute_hash(raw_text)
+        duplicate = check_duplicate(text_hash)
+        if duplicate:
+            return jsonify({
+                'duplicate':     True,
+                'existing_id':   duplicate['id'],
+                'existing_name': duplicate['name']
+            }), 409
 
-  function switchTab(tab) {
-    currentTab = tab;
-    document.querySelectorAll('.tab').forEach((t, i) => {
-      t.classList.toggle('active', ['file','url','text'][i] === tab);
-    });
-    document.querySelectorAll('.input-panel').forEach(p => p.classList.remove('active'));
-    document.getElementById('panel-' + tab).classList.add('active');
-  }
+        chunks     = clean_and_chunk(raw_text, chunk_size)
+        dataset_id = save_dataset(doc_name, source_type, chunks, text_hash)
 
-  const dropZone = document.getElementById('drop-zone');
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault(); dropZone.classList.remove('drag-over');
-    setFiles(Array.from(e.dataTransfer.files));
-  });
+        return jsonify({
+            'id':           dataset_id,
+            'name':         doc_name,
+            'total_chunks': len(chunks),
+            'preview':      chunks[:3]
+        }), 201
 
-  function handleFileSelect(input) {
-    if (input.files.length) setFiles(Array.from(input.files));
-  }
+    else:
+        return jsonify({'error': 'No input provided'}), 400
 
-  function setFiles(files) {
-    selectedFiles = files;
-    const label = files.length === 1
-      ? '📄 ' + files[0].name
-      : `📄 ${files.length} files selected: ${files.map(f => f.name).join(', ')}`;
-    document.getElementById('drop-label').textContent = label;
-  }
 
-  async function ingest() {
-    const status = document.getElementById('status');
-    const batchDiv = document.getElementById('batch-results');
-    const chunkSize = document.getElementById('chunk-slider').value;
-    batchDiv.innerHTML = '';
-    showStatus('loading', 'Processing…');
+@app.route('/api/datasets', methods=['GET'])
+def list_datasets():
+    search = request.args.get('q', '').strip()
+    with get_db() as db:
+        if search:
+            rows = db.execute(
+                'SELECT id, name, source, created, word_count, char_count, json_array_length(chunks) as chunk_count '
+                'FROM datasets WHERE name LIKE ? ORDER BY id DESC',
+                (f'%{search}%',)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                'SELECT id, name, source, created, word_count, char_count, json_array_length(chunks) as chunk_count '
+                'FROM datasets ORDER BY id DESC'
+            ).fetchall()
+    return jsonify([dict(r) for r in rows])
 
-    try {
-      let response, data;
 
-      if (currentTab === 'file') {
-        if (!selectedFiles.length) { showStatus('error', 'Please select at least one file.'); return; }
-        const form = new FormData();
-        selectedFiles.forEach(f => form.append('file', f));
-        form.append('chunk_size', chunkSize);
-        response = await fetch('/api/ingest', { method: 'POST', body: form });
-        data = await response.json();
+@app.route('/api/datasets/<int:dataset_id>', methods=['GET'])
+def get_dataset(dataset_id):
+    with get_db() as db:
+        row = db.execute('SELECT * FROM datasets WHERE id = ?', (dataset_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    d = dict(row)
+    d['chunks'] = json.loads(d['chunks'])
+    return jsonify(d)
 
-        if (Array.isArray(data)) {
-          const success = data.filter(r => r.id);
-          const dupes   = data.filter(r => r.duplicate);
-          const errors  = data.filter(r => r.error);
-          let html = '';
-          success.forEach(r => html += `<div class="batch-result" style="color:#86efac">✓ ${r.name} — ${r.total_chunks} chunks</div>`);
-          dupes.forEach(r => html += `<div class="batch-result" style="color:#fcd34d">⚠ ${r.name} — duplicate of "${r.existing_name}" (skipped)</div>`);
-          errors.forEach(r => html += `<div class="batch-result" style="color:#fca5a5">✗ ${r.name} — ${r.error}</div>`);
-          batchDiv.innerHTML = html;
-          if (success.length) {
-            showStatus('success', `✓ Processed ${success.length} file(s)${dupes.length ? `, ${dupes.length} duplicate(s) skipped` : ''}`);
-          } else if (dupes.length) {
-            showStatus('warning', `All files already exist in your datasets.`);
-          } else {
-            showStatus('error', 'All files failed to process.');
-          }
-          loadDatasets(); return;
-        }
 
-      } else if (currentTab === 'url') {
-        const url = document.getElementById('url-input').value.trim();
-        if (!url) { showStatus('error', 'Please enter a URL.'); return; }
-        response = await fetch('/api/ingest', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, chunk_size: parseInt(chunkSize) })
-        });
-        data = await response.json();
+@app.route('/api/datasets/<int:dataset_id>', methods=['DELETE'])
+def delete_dataset(dataset_id):
+    with get_db() as db:
+        db.execute('DELETE FROM datasets WHERE id = ?', (dataset_id,))
+        db.commit()
+    return jsonify({'deleted': dataset_id})
 
-      } else {
-        const text = document.getElementById('text-input').value.trim();
-        const name = document.getElementById('text-name').value.trim();
-        if (!text) { showStatus('error', 'Please paste some text.'); return; }
-        response = await fetch('/api/ingest', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, name: name || 'pasted-text', chunk_size: parseInt(chunkSize) })
-        });
-        data = await response.json();
-      }
 
-      if (response.status === 409 || data.duplicate) {
-        showStatus('warning', `⚠ Duplicate detected — already exists as "${data.existing_name}"`);
-        return;
-      }
-      if (!response.ok) { showStatus('error', data.error || 'Something went wrong'); return; }
-      showStatus('success', `✓ Created dataset "${data.name}" — ${data.total_chunks} chunks`);
-      loadDatasets();
+@app.route('/api/export/<int:dataset_id>/<fmt>')
+def export(dataset_id, fmt):
+    with get_db() as db:
+        row = db.execute('SELECT * FROM datasets WHERE id = ?', (dataset_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
 
-    } catch (err) {
-      showStatus('error', 'Request failed: ' + err.message);
-    }
-  }
+    chunks = json.loads(row['chunks'])
+    # Strip meta from export — only prompt/completion
+    clean_chunks = [{'prompt': c['prompt'], 'completion': c['completion']} for c in chunks]
+    name = row['name'].replace(' ', '_')
 
-  function showStatus(type, msg) {
-    const s = document.getElementById('status');
-    s.className = 'status ' + type;
-    s.textContent = msg;
-  }
+    if fmt == 'jsonl':
+        output = '\n'.join(json.dumps(c) for c in clean_chunks)
+        return send_file(io.BytesIO(output.encode()), mimetype='application/jsonlines',
+                         as_attachment=True, download_name=f'{name}.jsonl')
+    elif fmt == 'json':
+        output = json.dumps(clean_chunks, indent=2)
+        return send_file(io.BytesIO(output.encode()), mimetype='application/json',
+                         as_attachment=True, download_name=f'{name}.json')
+    elif fmt == 'csv':
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=['prompt', 'completion'])
+        writer.writeheader()
+        writer.writerows(clean_chunks)
+        return send_file(io.BytesIO(buf.getvalue().encode()), mimetype='text/csv',
+                         as_attachment=True, download_name=f'{name}.csv')
+    else:
+        return jsonify({'error': 'Use jsonl, json, or csv'}), 400
 
-  function searchDatasets(query) {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => loadDatasets(query), 300);
-  }
 
-  async function loadDatasets(query = '') {
-    const url = '/api/datasets' + (query ? `?q=${encodeURIComponent(query)}` : '');
-    const res  = await fetch(url);
-    const data = await res.json();
-    const container = document.getElementById('dataset-container');
-    const statsRow  = document.getElementById('stats-row');
+# ── Main ──────────────────────────────────────────────────────────────────────
+init_db()
 
-    if (!data.length) {
-      container.innerHTML = '<div id="empty-state">No datasets found</div>';
-      statsRow.textContent = '';
-      return;
-    }
-
-    const totalChunks = data.reduce((a, d) => a + d.chunk_count, 0);
-    const totalWords  = data.reduce((a, d) => a + (d.word_count || 0), 0);
-    statsRow.textContent = `${data.length} dataset${data.length !== 1 ? 's' : ''} · ${totalChunks.toLocaleString()} chunks · ${totalWords.toLocaleString()} words processed`;
-
-    container.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th><th>Source</th><th>Chunks</th><th>Words / Chars</th><th>Created</th><th>Export</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.map(d => `
-            <tr>
-              <td style="cursor:pointer;color:#a78bfa" onclick="preview(${d.id})">${d.name}</td>
-              <td><span class="badge badge-${getBadgeClass(d.source)}">${d.source}</span></td>
-              <td>${d.chunk_count}</td>
-              <td class="meta-cell">${(d.word_count||0).toLocaleString()} w<br/>${(d.char_count||0).toLocaleString()} ch</td>
-              <td style="color:#64748b;font-size:12px">${d.created}</td>
-              <td>
-                <div class="export-group">
-                  <button class="btn btn-export" onclick="exportDataset(${d.id},'jsonl')">JSONL</button>
-                  <button class="btn btn-export" onclick="exportDataset(${d.id},'csv')">CSV</button>
-                  <button class="btn btn-export" onclick="exportDataset(${d.id},'json')">JSON</button>
-                </div>
-              </td>
-              <td><button class="btn btn-danger" onclick="deleteDataset(${d.id})">Delete</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`;
-  }
-
-  function getBadgeClass(source) {
-    if (source === 'url') return 'url';
-    if (source === 'text') return 'text';
-    if (['png','jpg','jpeg'].includes(source)) return 'image';
-    return 'pdf';
-  }
-
-  async function preview(id) {
-    const res  = await fetch(`/api/datasets/${id}`);
-    const data = await res.json();
-    const highCount  = data.chunks.filter(c => c.meta?.quality === 'high').length;
-    const totalWords = data.chunks.reduce((a, c) => a + (c.meta?.word_count || 0), 0);
-    document.getElementById('modal-title').textContent = data.name;
-    document.getElementById('modal-meta').textContent =
-      `${data.chunks.length} chunks · ${totalWords.toLocaleString()} words · ${highCount} high-quality chunks`;
-    document.getElementById('modal-chunks').innerHTML =
-      data.chunks.slice(0, 6).map((c, i) => `
-        <div class="chunk-item">
-          <div class="chunk-header">
-            <span class="chunk-num">Chunk ${i + 1}</span>
-            <span>
-              <span class="quality quality-${c.meta?.quality || 'medium'}">${c.meta?.quality || 'medium'}</span>
-              <span class="chunk-stats" style="margin-left:8px">${c.meta?.word_count || 0}w · ${c.meta?.sentence_count || 0} sentences</span>
-            </span>
-          </div>
-          <div class="chunk-label">Prompt</div>
-          <div class="chunk-text">${c.prompt}</div>
-          <div class="chunk-label" style="margin-top:10px">Completion</div>
-          <div class="chunk-text">${c.completion}</div>
-        </div>`).join('') +
-      (data.chunks.length > 6
-        ? `<div style="color:#64748b;font-size:12px;text-align:center;padding:8px">+ ${data.chunks.length - 6} more chunks</div>`
-        : '');
-    document.getElementById('modal').classList.add('open');
-  }
-
-  function closeModal() { document.getElementById('modal').classList.remove('open'); }
-  function exportDataset(id, fmt) { window.location.href = `/api/export/${id}/${fmt}`; }
-
-  async function deleteDataset(id) {
-    if (!confirm('Delete this dataset?')) return;
-    await fetch(`/api/datasets/${id}`, { method: 'DELETE' });
-    loadDatasets(document.getElementById('search-input').value);
-  }
-
-  loadDatasets();
-</script>
-</body>
-</html>
+if __name__ == '__main__':
+    app.run(debug=True)
