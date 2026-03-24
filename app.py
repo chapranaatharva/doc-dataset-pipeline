@@ -26,8 +26,9 @@ def get_db():
 
 def init_db():
     with get_db() as db:
+        db.execute('DROP TABLE IF EXISTS datasets')
         db.execute('''
-            CREATE TABLE IF NOT EXISTS datasets (
+            CREATE TABLE datasets (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 name       TEXT NOT NULL,
                 source     TEXT NOT NULL,
@@ -38,15 +39,6 @@ def init_db():
                 created    TEXT DEFAULT (datetime('now'))
             )
         ''')
-        for col, definition in [
-            ('hash', 'TEXT'),
-            ('word_count', 'INTEGER DEFAULT 0'),
-            ('char_count', 'INTEGER DEFAULT 0')
-        ]:
-            try:
-                db.execute(f'ALTER TABLE datasets ADD COLUMN {col} {definition}')
-            except:
-                pass
         db.commit()
 
 
