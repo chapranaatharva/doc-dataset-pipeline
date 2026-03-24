@@ -287,6 +287,7 @@
         showStatus('warning', `⚠ Duplicate detected — this content already exists as "${data.existing_name}"`);
         return;
       }
+      if (data.duplicate) { showStatus('error', `⚠ Duplicate detected — already exists as "${data.existing_name}"`); return; }
       if (!response.ok) { showStatus('error', data.error); return; }
 
       showStatus('success', `✓ Created dataset "${data.name}" — ${data.total_chunks} chunks`);
