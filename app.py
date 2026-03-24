@@ -38,6 +38,10 @@ def init_db():
                 created    TEXT DEFAULT (datetime('now'))
             )
         ''')
+        try:
+            db.execute('ALTER TABLE datasets ADD COLUMN hash TEXT')
+        except:
+            pass
         db.commit()
 
 
