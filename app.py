@@ -18,15 +18,76 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
 # ── Database ──────────────────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get('DATABASE_URL')
+IS_POSTGRES = bool(DATABASE_URL)
+
+if IS_POSTGRES:
+    import urllib.parse
+    import psycopg2
+    import psycopg2.extras
 
 def get_db():
-    db = sqlite3.connect('/tmp/datasets.db' if os.name != 'nt' else 'datasets.db')
-    db.row_factory = sqlite3.Row
-    return db
+    if IS_POSTGRES:
+        urllib.parse.uses_netloc.append("postgres")
+        url = urllib.parse.urlparse(DATABASE_URL)
+        conn = psycopg2.connect(
+            database=url.path[1:],
+            user=url.username,
+            password=url.password,
+            host=url.hostname,
+            port=url.port,
+            cursor_factory=psycopg2.extras.DictCursor
+        )
+        return conn
+    else:
+        db = sqlite3.connect('/tmp/datasets.db' if os.name != 'nt' else 'datasets.db')
+        db.row_factory = sqlite3.Row
+        return db
+
+def run_query(query, params=(), commit=False, fetchone=False, fetchall=False, return_id=False):
+    db = get_db()
+    try:
+        cur = db.cursor()
+        if IS_POSTGRES:
+            q = query.replace('?', '%s')
+            if 'json_array_length(chunks)' in q:
+                q = q.replace('json_array_length(chunks)', 'json_array_length(chunks::json)')
+            if return_id:
+                q += ' RETURNING id'
+            cur.execute(q, params)
+            if commit: db.commit()
+            if return_id: return cur.fetchone()[0]
+            if fetchone:
+                row = cur.fetchone()
+                return dict(row) if row else None
+            if fetchall: return [dict(r) for r in cur.fetchall()]
+        else:
+            cur.execute(query, params)
+            if commit: db.commit()
+            if return_id: return cur.lastrowid
+            if fetchone:
+                row = cur.fetchone()
+                return dict(row) if row else None
+            if fetchall: return [dict(r) for r in cur.fetchall()]
+    finally:
+        db.close()
 
 def init_db():
-    with get_db() as db:
-        db.execute('''
+    if IS_POSTGRES:
+        query = '''
+            CREATE TABLE IF NOT EXISTS datasets (
+                id         SERIAL PRIMARY KEY,
+                name       TEXT NOT NULL,
+                source     TEXT NOT NULL,
+                chunks     TEXT NOT NULL,
+                hash       TEXT,
+                word_count INTEGER DEFAULT 0,
+                char_count INTEGER DEFAULT 0,
+                created    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        '''
+    else:
+        query = '''
             CREATE TABLE IF NOT EXISTS datasets (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 name       TEXT NOT NULL,
@@ -37,8 +98,8 @@ def init_db():
                 char_count INTEGER DEFAULT 0,
                 created    TEXT DEFAULT (datetime('now'))
             )
-        ''')
-        db.commit()
+        '''
+    run_query(query, commit=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,9 +111,7 @@ def compute_hash(text: str) -> str:
     return hashlib.md5(text.encode()).hexdigest()
 
 def check_duplicate(text_hash: str):
-    with get_db() as db:
-        row = db.execute('SELECT id, name FROM datasets WHERE hash = ?', (text_hash,)).fetchone()
-    return dict(row) if row else None
+    return run_query('SELECT id, name FROM datasets WHERE hash = ?', (text_hash,), fetchone=True)
 
 def compute_totals(chunks: list) -> dict:
     total_words = sum(c['meta']['word_count'] for c in chunks)
@@ -61,14 +120,12 @@ def compute_totals(chunks: list) -> dict:
 
 def save_dataset(name, source, chunks, text_hash):
     totals = compute_totals(chunks)
-    with get_db() as db:
-        cursor = db.execute(
-            'INSERT INTO datasets (name, source, chunks, hash, word_count, char_count) VALUES (?, ?, ?, ?, ?, ?)',
-            (name, source, json.dumps(chunks), text_hash,
-             totals['word_count'], totals['char_count'])
-        )
-        db.commit()
-        return cursor.lastrowid
+    return run_query(
+        'INSERT INTO datasets (name, source, chunks, hash, word_count, char_count) VALUES (?, ?, ?, ?, ?, ?)',
+        (name, source, json.dumps(chunks), text_hash, totals['word_count'], totals['char_count']),
+        commit=True,
+        return_id=True
+    )
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -183,25 +240,25 @@ def ingest():
 @app.route('/api/datasets', methods=['GET'])
 def list_datasets():
     search = request.args.get('q', '').strip()
-    with get_db() as db:
-        if search:
-            rows = db.execute(
-                'SELECT id, name, source, created, word_count, char_count, json_array_length(chunks) as chunk_count '
-                'FROM datasets WHERE name LIKE ? ORDER BY id DESC',
-                (f'%{search}%',)
-            ).fetchall()
-        else:
-            rows = db.execute(
-                'SELECT id, name, source, created, word_count, char_count, json_array_length(chunks) as chunk_count '
-                'FROM datasets ORDER BY id DESC'
-            ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    if search:
+        rows = run_query(
+            'SELECT id, name, source, created, word_count, char_count, json_array_length(chunks) as chunk_count '
+            'FROM datasets WHERE name LIKE ? ORDER BY id DESC',
+            (f'%{search}%',),
+            fetchall=True
+        )
+    else:
+        rows = run_query(
+            'SELECT id, name, source, created, word_count, char_count, json_array_length(chunks) as chunk_count '
+            'FROM datasets ORDER BY id DESC',
+            fetchall=True
+        )
+    return jsonify(rows)
 
 
 @app.route('/api/datasets/<int:dataset_id>', methods=['GET'])
 def get_dataset(dataset_id):
-    with get_db() as db:
-        row = db.execute('SELECT * FROM datasets WHERE id = ?', (dataset_id,)).fetchone()
+    row = run_query('SELECT * FROM datasets WHERE id = ?', (dataset_id,), fetchone=True)
     if not row:
         return jsonify({'error': 'Not found'}), 404
     d = dict(row)
@@ -211,16 +268,13 @@ def get_dataset(dataset_id):
 
 @app.route('/api/datasets/<int:dataset_id>', methods=['DELETE'])
 def delete_dataset(dataset_id):
-    with get_db() as db:
-        db.execute('DELETE FROM datasets WHERE id = ?', (dataset_id,))
-        db.commit()
+    run_query('DELETE FROM datasets WHERE id = ?', (dataset_id,), commit=True)
     return jsonify({'deleted': dataset_id})
 
 
 @app.route('/api/export/<int:dataset_id>/<fmt>')
 def export(dataset_id, fmt):
-    with get_db() as db:
-        row = db.execute('SELECT * FROM datasets WHERE id = ?', (dataset_id,)).fetchone()
+    row = run_query('SELECT * FROM datasets WHERE id = ?', (dataset_id,), fetchone=True)
     if not row:
         return jsonify({'error': 'Not found'}), 404
 
