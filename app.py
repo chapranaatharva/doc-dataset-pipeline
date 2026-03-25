@@ -20,15 +20,14 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # ── Database ──────────────────────────────────────────────────────────────────
 
 def get_db():
-    db = sqlite3.connect('/tmp/datasets.db')
+    db = sqlite3.connect('/tmp/datasets.db' if os.name != 'nt' else 'datasets.db')
     db.row_factory = sqlite3.Row
     return db
 
 def init_db():
     with get_db() as db:
-        db.execute('DROP TABLE IF EXISTS datasets')
         db.execute('''
-            CREATE TABLE datasets (
+            CREATE TABLE IF NOT EXISTS datasets (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 name       TEXT NOT NULL,
                 source     TEXT NOT NULL,

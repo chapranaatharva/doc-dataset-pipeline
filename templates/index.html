@@ -27,7 +27,7 @@
 
     .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
 
-    /* ── Ingest card ── */
+    /* ── Cards ── */
     .card {
       background: #1a1d27;
       border: 1px solid #2d3148;
@@ -101,6 +101,32 @@
 
     .process-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 
+    /* ── Chunk size slider ── */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+    }
+    .slider-row label { font-size: 13px; color: #94a3b8; white-space: nowrap; }
+    .slider-row input[type="range"] {
+      flex: 1;
+      accent-color: #a78bfa;
+      height: 4px;
+      cursor: pointer;
+    }
+    .slider-val {
+      font-size: 13px;
+      color: #a78bfa;
+      font-weight: 600;
+      min-width: 60px;
+      text-align: right;
+    }
+
     /* ── Status banner ── */
     .status {
       padding: 10px 16px;
@@ -111,7 +137,45 @@
     }
     .status.success { background: #14532d33; border: 1px solid #22c55e44; color: #86efac; display: block; }
     .status.error   { background: #7f1d1d33; border: 1px solid #ef444444; color: #fca5a5; display: block; }
+    .status.warning { background: #713f1233; border: 1px solid #f59e0b44; color: #fde68a; display: block; }
     .status.loading { background: #1e293b;   border: 1px solid #2d3148;   color: #94a3b8; display: block; }
+
+    /* ── Stats row ── */
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      flex: 1;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 14px 18px;
+      text-align: center;
+    }
+    .stat-val { font-size: 22px; font-weight: 700; color: #a78bfa; }
+    .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+
+    /* ── Search bar ── */
+    .search-bar {
+      margin-bottom: 16px;
+    }
+    .search-bar input {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 9px 14px 9px 36px;
+      color: #e2e8f0;
+      font-size: 13px;
+      width: 280px;
+      outline: none;
+      transition: border-color .2s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: 10px center;
+    }
+    .search-bar input:focus { border-color: #a78bfa; }
 
     /* ── Dataset table ── */
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -136,6 +200,19 @@
 
     #empty-state { text-align: center; padding: 40px; color: #475569; font-size: 14px; }
 
+    /* ── Quality badges ── */
+    .q-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .q-high   { background: #14532d44; color: #4ade80; border: 1px solid #22c55e44; }
+    .q-medium { background: #713f1244; color: #fbbf24; border: 1px solid #f59e0b44; }
+    .q-low    { background: #7f1d1d44; color: #f87171; border: 1px solid #ef444444; }
+
     /* ── Preview modal ── */
     .modal-overlay {
       position: fixed; inset: 0;
@@ -150,7 +227,7 @@
       background: #1a1d27;
       border: 1px solid #2d3148;
       border-radius: 14px;
-      width: 680px;
+      width: 720px;
       max-height: 80vh;
       overflow-y: auto;
       padding: 28px;
@@ -165,9 +242,16 @@
       font-size: 13px;
       line-height: 1.6;
     }
+    .chunk-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
     .chunk-label { font-size: 11px; color: #64748b; text-transform: uppercase;
                    letter-spacing: .05em; margin-bottom: 4px; }
     .chunk-text  { color: #cbd5e1; }
+    .chunk-meta  { font-size: 11px; color: #475569; margin-top: 8px; }
     .modal-close {
       margin-top: 16px;
       background: #2d3148;
@@ -177,6 +261,31 @@
       border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
+    }
+
+    /* ── File list (batch) ── */
+    .file-list {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .file-tag {
+      background: #a78bfa15;
+      border: 1px solid #a78bfa33;
+      color: #a78bfa;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .file-tag .remove {
+      cursor: pointer;
+      color: #ef4444;
+      font-weight: bold;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -202,9 +311,10 @@
     <!-- File -->
     <div id="panel-file" class="input-panel active">
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.txt" onchange="handleFileSelect(this)"/>
-        <div id="drop-label">Drop a PDF, image, or .txt here — or click to browse</div>
+        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.txt" multiple onchange="handleFileSelect(this)"/>
+        <div id="drop-label">Drop files here — or click to browse (supports batch upload)</div>
       </div>
+      <div class="file-list" id="file-list"></div>
     </div>
 
     <!-- URL -->
@@ -218,15 +328,42 @@
       <textarea id="text-input" placeholder="Paste raw text here..."></textarea>
     </div>
 
+    <!-- Chunk size slider -->
+    <div class="slider-row">
+      <label>Chunk Size</label>
+      <input type="range" id="chunk-slider" min="50" max="800" value="300" step="50"
+             oninput="document.getElementById('chunk-val').textContent = this.value + ' words'">
+      <span class="slider-val" id="chunk-val">300 words</span>
+    </div>
+
     <div class="process-row">
       <button class="btn btn-primary" onclick="ingest()">Process →</button>
     </div>
     <div id="status" class="status"></div>
   </div>
 
+  <!-- Stats -->
+  <div class="stats-row" id="stats-row" style="display:none">
+    <div class="stat-card">
+      <div class="stat-val" id="stat-datasets">0</div>
+      <div class="stat-label">Datasets</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-chunks">0</div>
+      <div class="stat-label">Total Chunks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-words">0</div>
+      <div class="stat-label">Words Processed</div>
+    </div>
+  </div>
+
   <!-- Datasets -->
   <div class="card">
     <h2>Processed Datasets</h2>
+    <div class="search-bar">
+      <input type="text" id="search-input" placeholder="Search datasets..." oninput="searchDatasets()"/>
+    </div>
     <div id="dataset-container">
       <div id="empty-state">No datasets yet — ingest a document above</div>
     </div>
@@ -235,7 +372,7 @@
 </div>
 
 <!-- Preview Modal -->
-<div class="modal-overlay" id="modal">
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <h3 id="modal-title">Dataset Preview</h3>
     <div id="modal-chunks"></div>
@@ -245,7 +382,7 @@
 
 <script>
   let currentTab = 'file';
-  let selectedFile = null;
+  let selectedFiles = [];
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   function switchTab(tab) {
@@ -257,29 +394,52 @@
     document.getElementById('panel-' + tab).classList.add('active');
   }
 
-  // ── File drag/drop ────────────────────────────────────────────────────────
+  // ── File drag/drop (multi-file) ──────────────────────────────────────────
   const dropZone = document.getElementById('drop-zone');
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
   dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) setFile(file);
+    addFiles(Array.from(e.dataTransfer.files));
   });
 
   function handleFileSelect(input) {
-    if (input.files[0]) setFile(input.files[0]);
+    addFiles(Array.from(input.files));
+    input.value = '';
   }
 
-  function setFile(file) {
-    selectedFile = file;
-    document.getElementById('drop-label').textContent = '📄 ' + file.name;
+  function addFiles(files) {
+    files.forEach(f => {
+      if (!selectedFiles.find(sf => sf.name === f.name && sf.size === f.size)) {
+        selectedFiles.push(f);
+      }
+    });
+    renderFileList();
+  }
+
+  function removeFile(idx) {
+    selectedFiles.splice(idx, 1);
+    renderFileList();
+  }
+
+  function renderFileList() {
+    const list = document.getElementById('file-list');
+    if (selectedFiles.length === 0) {
+      list.innerHTML = '';
+      document.getElementById('drop-label').textContent = 'Drop files here — or click to browse (supports batch upload)';
+      return;
+    }
+    document.getElementById('drop-label').textContent = `${selectedFiles.length} file(s) selected — click to add more`;
+    list.innerHTML = selectedFiles.map((f, i) =>
+      `<span class="file-tag">📄 ${f.name} <span class="remove" onclick="event.stopPropagation();removeFile(${i})">×</span></span>`
+    ).join('');
   }
 
   // ── Ingest ────────────────────────────────────────────────────────────────
   async function ingest() {
     const status = document.getElementById('status');
+    const chunkSize = document.getElementById('chunk-slider').value;
     status.className = 'status loading';
     status.textContent = 'Processing…';
 
@@ -287,10 +447,35 @@
       let response;
 
       if (currentTab === 'file') {
-        if (!selectedFile) { showStatus('error', 'Please select a file first.'); return; }
+        if (selectedFiles.length === 0) { showStatus('error', 'Please select at least one file.'); return; }
         const form = new FormData();
-        form.append('file', selectedFile);
+        selectedFiles.forEach(f => form.append('file', f));
+        form.append('chunk_size', chunkSize);
         response = await fetch('/api/ingest', { method: 'POST', body: form });
+
+        const data = await response.json();
+        if (!response.ok) { showStatus('error', data.error || 'Upload failed'); return; }
+
+        // Handle batch results (array)
+        if (Array.isArray(data)) {
+          const success = data.filter(d => d.id);
+          const dupes = data.filter(d => d.duplicate);
+          const errors = data.filter(d => d.error);
+
+          let msg = [];
+          if (success.length) msg.push(`✓ ${success.length} dataset(s) created`);
+          if (dupes.length) msg.push(`⚠ ${dupes.length} duplicate(s) skipped`);
+          if (errors.length) msg.push(`✗ ${errors.length} error(s)`);
+
+          showStatus(errors.length && !success.length ? 'error' : dupes.length ? 'warning' : 'success', msg.join(' · '));
+        } else {
+          showStatus('success', `✓ Created "${data.name}" — ${data.total_chunks} chunks`);
+        }
+
+        selectedFiles = [];
+        renderFileList();
+        loadDatasets();
+        return;
 
       } else if (currentTab === 'url') {
         const url = document.getElementById('url-input').value.trim();
@@ -298,7 +483,7 @@
         response = await fetch('/api/ingest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url })
+          body: JSON.stringify({ url, chunk_size: parseInt(chunkSize) })
         });
 
       } else {
@@ -308,14 +493,21 @@
         response = await fetch('/api/ingest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, name: name || 'pasted-text' })
+          body: JSON.stringify({ text, name: name || 'pasted-text', chunk_size: parseInt(chunkSize) })
         });
       }
 
       const data = await response.json();
-      if (!response.ok) { showStatus('error', data.error); return; }
+      if (!response.ok) {
+        if (data.duplicate) {
+          showStatus('warning', `⚠ Duplicate detected — already exists as "${data.existing_name}"`);
+        } else {
+          showStatus('error', data.error);
+        }
+        return;
+      }
 
-      showStatus('success', `✓ Created dataset "${data.name}" — ${data.total_chunks} chunks`);
+      showStatus('success', `✓ Created "${data.name}" — ${data.total_chunks} chunks`);
       loadDatasets();
 
     } catch (err) {
@@ -329,15 +521,41 @@
     s.textContent = msg;
   }
 
+  // ── Search ────────────────────────────────────────────────────────────────
+  let searchTimeout;
+  function searchDatasets() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => loadDatasets(), 300);
+  }
+
   // ── Load datasets ─────────────────────────────────────────────────────────
   async function loadDatasets() {
-    const res  = await fetch('/api/datasets');
+    const search = document.getElementById('search-input').value.trim();
+    const url = search ? `/api/datasets?q=${encodeURIComponent(search)}` : '/api/datasets';
+    const res  = await fetch(url);
     const data = await res.json();
     const container = document.getElementById('dataset-container');
+    const statsRow = document.getElementById('stats-row');
 
     if (!data.length) {
       container.innerHTML = '<div id="empty-state">No datasets yet — ingest a document above</div>';
+      statsRow.style.display = 'none';
       return;
+    }
+
+    // Update stats
+    statsRow.style.display = 'flex';
+    const totalChunks = data.reduce((s, d) => s + d.chunk_count, 0);
+    const totalWords = data.reduce((s, d) => s + (d.word_count || 0), 0);
+    document.getElementById('stat-datasets').textContent = data.length;
+    document.getElementById('stat-chunks').textContent = totalChunks.toLocaleString();
+    document.getElementById('stat-words').textContent = totalWords.toLocaleString();
+
+    function sourceBadgeClass(source) {
+      if (source === 'url') return 'badge-url';
+      if (source === 'text') return 'badge-text';
+      if (/png|jpg|jpeg/.test(source)) return 'badge-image';
+      return 'badge-pdf';
     }
 
     container.innerHTML = `
@@ -347,6 +565,8 @@
             <th>Name</th>
             <th>Source</th>
             <th>Chunks</th>
+            <th>Words</th>
+            <th>Chars</th>
             <th>Created</th>
             <th>Export</th>
             <th></th>
@@ -356,8 +576,10 @@
           ${data.map(d => `
             <tr>
               <td style="cursor:pointer;color:#a78bfa" onclick="preview(${d.id})">${d.name}</td>
-              <td><span class="badge badge-${d.source === 'url' ? 'url' : d.source === 'text' ? 'text' : d.source.match(/png|jpg|jpeg/) ? 'image' : 'pdf'}">${d.source}</span></td>
+              <td><span class="badge ${sourceBadgeClass(d.source)}">${d.source}</span></td>
               <td>${d.chunk_count}</td>
+              <td style="color:#94a3b8">${(d.word_count || 0).toLocaleString()}</td>
+              <td style="color:#94a3b8">${(d.char_count || 0).toLocaleString()}</td>
               <td style="color:#64748b;font-size:12px">${d.created}</td>
               <td>
                 <div class="export-group">
@@ -373,20 +595,34 @@
       </table>`;
   }
 
-  // ── Preview ───────────────────────────────────────────────────────────────
+  // ── Preview with quality badges ───────────────────────────────────────────
   async function preview(id) {
     const res  = await fetch(`/api/datasets/${id}`);
     const data = await res.json();
     document.getElementById('modal-title').textContent = data.name;
-    document.getElementById('modal-chunks').innerHTML = data.chunks.slice(0, 5).map((c, i) => `
+    document.getElementById('modal-chunks').innerHTML = data.chunks.slice(0, 8).map((c, i) => {
+      const meta = c.meta || {};
+      const q = meta.quality || 'medium';
+      return `
       <div class="chunk-item">
-        <div class="chunk-label">Chunk ${i + 1}</div>
+        <div class="chunk-header">
+          <span class="chunk-label" style="margin:0">Chunk ${i + 1}</span>
+          <span class="q-badge q-${q}">${q.toUpperCase()}</span>
+        </div>
         <div class="chunk-label" style="margin-top:8px">Prompt</div>
-        <div class="chunk-text">${c.prompt}</div>
+        <div class="chunk-text">${escapeHtml(c.prompt)}</div>
         <div class="chunk-label" style="margin-top:10px">Completion</div>
-        <div class="chunk-text">${c.completion}</div>
-      </div>`).join('') + (data.chunks.length > 5 ? `<div style="color:#64748b;font-size:12px;text-align:center">+ ${data.chunks.length - 5} more chunks</div>` : '');
+        <div class="chunk-text">${escapeHtml(c.completion)}</div>
+        <div class="chunk-meta">${meta.word_count || '?'} words · ${meta.sentence_count || '?'} sentences · ${meta.char_count || '?'} chars</div>
+      </div>`;
+    }).join('') + (data.chunks.length > 8 ? `<div style="color:#64748b;font-size:12px;text-align:center;padding:12px">+ ${data.chunks.length - 8} more chunks</div>` : '');
     document.getElementById('modal').classList.add('open');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   function closeModal() {
