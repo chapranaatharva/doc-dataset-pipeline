@@ -51,6 +51,23 @@ Open **http://localhost:5000** in your browser.
 
 ---
 
+## ⚙️ Environment Configuration
+
+For local development with PostgreSQL, you can create a `.env` file in the root directory:
+
+```env
+# Optional: Set this to use PostgreSQL. 
+# If omitted, the app will automatically default to local SQLite.
+DATABASE_URL=postgresql://user:password@localhost/dbname
+```
+
+Make sure to install `python-dotenv` if you want the `.env` file to be loaded automatically:
+```bash
+pip install python-dotenv
+```
+
+---
+
 ## 📊 How It Works
 
 ```

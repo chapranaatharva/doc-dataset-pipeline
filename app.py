@@ -18,6 +18,12 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
 # ── Database ──────────────────────────────────────────────────────────────────
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, rely on system env vars (e.g. on Render)
+
 DATABASE_URL = os.environ.get('DATABASE_URL')
 IS_POSTGRES = bool(DATABASE_URL)
 
