@@ -1,119 +1,116 @@
-# Document-to-Dataset Pipeline
+# 📄 Doc-to-Dataset Pipeline
 
-A Flask web app that ingests unstructured documents and transforms them into clean, structured datasets ready for LLM fine-tuning.
+**Convert any unstructured document into clean, LLM-ready training data.**
 
-**Live Demo:** https://doc-dataset-pipeline.onrender.com/
+Upload PDFs, scrape URLs, OCR images, or paste raw text — the pipeline extracts, cleans, chunks, and exports structured prompt/completion pairs in JSONL, JSON, or CSV format, ready for fine-tuning models like GPT, Mistral, or Llama.
 
----
-
-## What it does
-
-Takes any messy document → outputs LLM-ready JSONL training data.
-
-| Input | How |
-|-------|-----|
-| PDF | PyMuPDF text extraction |
-| URL | BeautifulSoup web scraping |
-| Image | Tesseract OCR |
-| Plain text | Direct ingestion |
-
-Each document is cleaned, chunked into ~N-word segments, and formatted as `{"prompt": ..., "completion": ...}` pairs — the standard format for fine-tuning OpenAI, Mistral, and Llama models.
+> 🔗 **Live Demo:** [doc-dataset-pipeline.onrender.com](https://doc-dataset-pipeline.onrender.com)
 
 ---
 
-## Features
+## ✨ Features
 
-- **Multi-file batch upload** — drag and drop multiple files at once
-- **Adjustable chunk size** — slider from 100 to 600 words per chunk
-- **Duplicate detection** — MD5 hash check prevents re-processing the same content
-- **Quality scoring** — each chunk rated high / medium / low based on density
-- **Search & filter** — real-time search across all datasets
-- **Word & character counts** — total words and characters processed per dataset
-- **Export formats** — JSONL, CSV, JSON
-- **Preview modal** — inspect chunks before exporting
-- **REST API** — all functionality accessible via clean endpoints
-
----
-
-## Project structure
-
-```
-pipeline/
-├── app.py              # Flask app — routes, DB, API endpoints
-├── extractor.py        # Text extraction (PDF / URL / image / text)
-├── processor.py        # Cleaning, chunking, quality scoring
-├── requirements.txt    # Python dependencies
-├── render.yaml         # Render deployment config
-└── templates/
-    └── index.html      # Dashboard UI
-```
+| Feature | Description |
+|---|---|
+| **Multi-source ingestion** | PDF (PyMuPDF), URL (BeautifulSoup), Image/OCR (Tesseract), Plain text |
+| **Smart chunking** | Sentence-aware splitting with configurable chunk size (50–800 words) |
+| **Quality scoring** | Each chunk rated HIGH / MEDIUM / LOW based on word density and sentence count |
+| **Batch upload** | Drag & drop multiple files at once for bulk processing |
+| **Duplicate detection** | MD5 hashing prevents re-processing the same document |
+| **Search & filter** | Instantly search across all processed datasets |
+| **Multi-format export** | JSONL (LLM fine-tuning), JSON, CSV |
+| **Dashboard stats** | Live totals for datasets, chunks, and words processed |
 
 ---
 
-## Setup
+## 🛠️ Tech Stack
+
+- **Backend:** Python, Flask, SQLite
+- **Text Extraction:** PyMuPDF, BeautifulSoup4, Tesseract OCR
+- **NLP Processing:** Regex-based sentence splitting, noise removal, smart chunking
+- **Frontend:** Vanilla HTML/CSS/JS — dark theme, responsive UI
+- **Deployment:** Render (Gunicorn)
+
+---
+
+## 🚀 Quick Start
 
 ```bash
+# Clone
+git clone https://github.com/chapranaatharva/doc-dataset-pipeline.git
+cd doc-dataset-pipeline
+
 # Install dependencies
 pip install -r requirements.txt
-
-# Install Tesseract (for image/OCR support)
-# Ubuntu:  sudo apt install tesseract-ocr
-# Mac:     brew install tesseract
-# Windows: https://github.com/UB-Mannheim/tesseract/wiki
 
 # Run
 python app.py
 ```
 
-Open `http://localhost:5000`
+Open **http://localhost:5000** in your browser.
 
 ---
 
-## API Endpoints
+## 📊 How It Works
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
+│  PDF / URL  │────▶│   Extract    │────▶│   Clean &   │────▶│   Export as  │
+│ Image / Text│     │   Raw Text   │     │   Chunk     │     │ JSONL/JSON/CSV│
+└─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
+```
+
+1. **Extract** — Pull raw text from any supported source
+2. **Clean** — Remove noise (page numbers, URLs, special chars, extra whitespace)
+3. **Chunk** — Split into sentence-aware segments of configurable size
+4. **Format** — Each chunk → `{"prompt": "...", "completion": "..."}` pair with quality metadata
+5. **Export** — Download as JSONL (industry standard for LLM fine-tuning)
+
+---
+
+## 📁 Project Structure
+
+```
+├── app.py              # Flask backend — routes, DB, API endpoints
+├── extractor.py        # Text extraction (PDF, URL, OCR, plaintext)
+├── processor.py        # NLP pipeline — clean, chunk, format, score
+├── templates/
+│   └── index.html      # Dashboard UI
+├── render.yaml         # Render deployment config
+└── requirements.txt    # Python dependencies
+```
+
+---
+
+## 🔌 API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/ingest` | Ingest file(s), URL, or text |
-| GET | `/api/datasets` | List all datasets (supports `?q=search`) |
-| GET | `/api/datasets/<id>` | Get dataset with all chunks |
-| DELETE | `/api/datasets/<id>` | Delete a dataset |
-| GET | `/api/export/<id>/<fmt>` | Export as `jsonl` / `csv` / `json` |
-
-### Ingest examples
-
-```bash
-# Single file
-curl -X POST -F "file=@document.pdf" -F "chunk_size=300" \
-  http://localhost:5000/api/ingest
-
-# Multiple files
-curl -X POST -F "file=@doc1.pdf" -F "file=@doc2.pdf" \
-  http://localhost:5000/api/ingest
-
-# URL
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com/article", "chunk_size": 200}' \
-  http://localhost:5000/api/ingest
-
-# Plain text
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"text": "Your text here", "name": "my-doc"}' \
-  http://localhost:5000/api/ingest
-```
+| `POST` | `/api/ingest` | Upload file(s), URL, or text for processing |
+| `GET` | `/api/datasets` | List all datasets (supports `?q=` search) |
+| `GET` | `/api/datasets/:id` | Get dataset with all chunks |
+| `DELETE` | `/api/datasets/:id` | Delete a dataset |
+| `GET` | `/api/export/:id/:fmt` | Export as `jsonl`, `json`, or `csv` |
 
 ---
 
-## Output format (JSONL)
+## 📝 Output Format (JSONL)
+
+Each line in the exported `.jsonl` file:
 
 ```json
-{"prompt": "First sentence of the chunk.", "completion": "Rest of the chunk text here..."}
-{"prompt": "Next chunk first sentence.", "completion": "Rest of second chunk..."}
+{"prompt": "First sentence of the chunk.", "completion": "Remaining sentences providing context and detail..."}
 ```
 
-Each line is a self-contained training example. Feed directly into any fine-tuning script.
+This is the standard format used by OpenAI, Mistral, and other providers for fine-tuning custom models.
 
 ---
 
-## Tech stack
+## 📌 Notes
 
-Python · Flask · SQLite · PyMuPDF · BeautifulSoup · Tesseract · Gunicorn · Render
+- **Render free tier** uses ephemeral storage — the SQLite database resets on redeploy. For production use, swap to PostgreSQL.
+- **OCR** requires [Tesseract](https://github.com/tesseract-ocr/tesseract) installed on your OS.
+
+---
+
+Built by **Atharva Chaprana**
